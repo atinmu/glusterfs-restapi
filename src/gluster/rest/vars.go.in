@@ -1,0 +1,7 @@
+package main
+
+var (
+	defaultConfigPath = "@SYSCONFDIR@/glusterfs/restconfig.json"
+	customConfigPath = "@GLUSTERD_WORKDIR@/rest/config.json"
+	logFilePath = "@LOCALSTATEDIR@/log/glusterfs/rest/server.log"
+)

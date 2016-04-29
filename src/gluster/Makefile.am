@@ -1,0 +1,1 @@
+SUBDIRS = rest utils cli

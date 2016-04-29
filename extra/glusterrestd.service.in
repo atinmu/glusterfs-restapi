@@ -1,0 +1,11 @@
+[Unit]
+Description=Gluster REST Service
+After=syslog.target network.target glusterd
+
+[Service]
+Type=simple
+ExecStart=@SBINDIR@/glusterrestd
+ExecReload=/bin/kill -SIGUSR2 $MAINPID
+
+[Install]
+WantedBy=multi-user.target

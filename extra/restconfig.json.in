@@ -1,0 +1,14 @@
+{
+    "auth_enabled": true,
+    "https": false,
+    "port": 8080,
+    "csr": "@SYSCONFDIR@/glusterfs/restserver.csr",
+    "key": "@SYSCONFDIR@/glusterfs/restserver.key",
+    "apps_file": "@GLUSTERD_WORKDIR@/rest/apps.json",
+    "access_log_file": "@LOCALSTATEDIR@/log/glusterfs/rest/access.log",
+    "internal_user": "gluster",
+    "listen_url": "/listen",
+    "api_version": "v1",
+    "events_url": "/events",
+    "websocket_expiry": 30
+}

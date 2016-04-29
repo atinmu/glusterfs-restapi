@@ -1,0 +1,76 @@
+
+.\"  Copyright (c) 2016 Red Hat, Inc. <http://www.redhat.com>
+.\"  This file is part of GlusterFS.
+.\"
+.\"  This file is licensed to you under your choice of the GNU Lesser
+.\"  General Public License, version 3 or any later version (LGPLv3 or
+.\"  later), or the GNU General Public License, version 2 (GPLv2), in all
+.\"  cases as published by the Free Software Foundation.
+.\"
+.\"
+.TH Gluster 8 "Gluster REST APIs command line utility" "13 April 2016" "Gluster Inc."
+.SH NAME
+glusterrest - Gluster REST APIs Console Manager (command line utility)
+.SH SYNOPSIS
+.B glusterrest
+.I [commands] [options]
+
+.SH DESCRIPTION
+The Gluster REST APIs Console Manager is a command line utility for managing REST APIs configurations, applications. The command enables administrators to perform start, stop, restart REST services.
+.SH COMMANDS
+
+.SS "Commands"
+.PP
+.TP
+
+\fB\ enable [-h] \fR
+Enable REST Services in all peer nodes.
+.TP
+\fB\ disable [-h] \fR
+Disable REST Services in all peer nodes.
+.TP
+\fB\ start [-h] \fR
+Start REST Services in all peer nodes.
+.TP
+\fB\ stop [-h] \fR
+Stop REST Services in all peer nodes.
+.TP
+\fB\ restart [-h] \fR
+Restart REST Services in all peer nodes.
+.TP
+\fB\ reload [-h] \fR
+Reload REST Services in all peer nodes.
+.TP
+\fB\ status [-h] \fR
+Show status of REST Services from all peer nodes.
+.TP
+\fB\ app-add [-h] appid appsecret \fR
+Creates new REST Application and sync to all peer nodes.
+.TP
+\fB\ app-reset [-h] appid appsecret \fR
+Reset Application secret and sync to all peer nodes.
+.TP
+\fB\ app-del [-h] appid \fR
+Delete Application and sync to all peer nodes.
+.TP
+\fB\ config-set [-h] name value \fR
+Update configuration of REST Services in all peer nodes.
+.TP
+\fB\ config-get [-h] [--name NAME] \fR
+Show configuration details of REST Services.
+.TP
+\fB\ config-reset [-h] [--name NAME] \fR
+Reset configuration of REST Services. If name is not passed, all configurations will be reset.
+.TP
+\fB\ sync [-h] \fR
+Sync applications and configuration details to all peer nodes from current node.
+.TP
+
+\fB\ --help \fR
+Display the command options.
+.TP
+
+.fi
+.SH COPYRIGHT
+.nf
+Copyright(c) 2016  Gluster, Inc.  <http://www.gluster.com>

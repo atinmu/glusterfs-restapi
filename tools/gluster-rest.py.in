@@ -1,2 +1,389 @@
 #!/usr/bin/env python
+from __future__ import print_function
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
+import json
+import os
+import subprocess
+import sys
+from errno import EEXIST
+import xml.etree.cElementTree as etree
 
+import fasteners
+
+CMD = ["gluster", "system::", "execute"]
+COPY_FILE_CMD = ["gluster", "system::", "copy", "file"]
+APPS_FILE_TO_SYNC = "/rest/apps.json"
+APPS_FILE = "@GLUSTERD_WORKDIR@" + APPS_FILE_TO_SYNC
+DEFAULT_CONFIG_FILE = "@SYSCONFDIR@/glusterfs/restconfig.json"
+CUSTOM_CONFIG_FILE_TO_SYNC = "/rest/config.json"
+CUSTOM_CONFIG_FILE = "@GLUSTERD_WORKDIR@" + CUSTOM_CONFIG_FILE_TO_SYNC
+
+CONFIG_KEYS = ["port", "https", "enabled", "auth_enabled"]
+BOOL_CONFIGS = ["https", "enabled", "auth_enabled"]
+RESTART_CONFIGS = ["port", "https"]
+
+ParseError = etree.ParseError if hasattr(etree, 'ParseError') else SyntaxError
+
+
+def mkdirp(path, exit_on_err=False, logger=None):
+    """
+    Try creating required directory structure
+    ignore EEXIST and raise exception for rest of the errors.
+    Print error in stderr and exit
+    """
+    try:
+        os.makedirs(path)
+    except (OSError, IOError) as e:
+        if e.errno == EEXIST and os.path.isdir(path):
+            pass
+        else:
+            output_error("Fail to create dir %s: %s" % (path, e))
+
+
+def execute(cmd, fail_msg="", fail=True):
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.returncode != 0 and fail:
+        output_error(fail_msg + "\n" + err.strip())
+
+    return p.returncode, out, err
+
+
+def output_error(message):
+    print (message, file=sys.stderr)
+    sys.exit(1)
+
+
+def create_custom_config_file_if_not_exists():
+    mkdirp(os.path.dirname(CUSTOM_CONFIG_FILE))
+    if not os.path.exists(CUSTOM_CONFIG_FILE):
+        with open(CUSTOM_CONFIG_FILE, "w") as f:
+            f.write("{}")
+
+
+def create_apps_file_if_not_exists():
+    mkdirp(os.path.dirname(APPS_FILE))
+    if not os.path.exists(APPS_FILE):
+        with open(APPS_FILE, "w") as f:
+            f.write("{}")
+
+
+def boolify(value):
+    val = False
+    if value.lower() in ["enabled", "true", "on", "yes"]:
+        val = True
+    return val
+
+
+def get_pool_list():
+    cmd = ["gluster", "--mode=script", "pool", "list", "--xml"]
+    rc, out, err = execute(cmd, fail_msg="Failed to get list of peers")
+    tree = etree.fromstring(out)
+
+    pool = []
+    try:
+        for p in tree.findall('peerStatus/peer'):
+            pool.append({"nodeid": p.find("uuid").text,
+                         "hostname": p.find("hostname").text,
+                         "connected": (True if p.find("connected").text == "1"
+                                       else False)})
+    except (ParseError, AttributeError, ValueError) as e:
+        output_error("Failed to parse Pool Info: {0}".format(e))
+
+    return pool
+
+
+def peer_restcli_output_handle(out, action):
+    out = out.strip().splitlines()
+
+    # JSON decode each line and construct one object with node id as key
+    all_nodes_data = {}
+    for node_data in out:
+        data = json.loads(node_data)
+        all_nodes_data[data["nodeid"]] = {
+            "nodeid": data.get("nodeid"),
+            "ok": data.get("ok"),
+            "output": data.get("output", ""),
+            "error": data.get("error", "")}
+
+    pool_list = get_pool_list()
+
+    print ("{0:15s} {1:17s} MESSAGE".format("NODE STATUS", "CMD STATUS"))
+    print ("{0} {1} {2}".format("-"*15, "-"*17, "-"*20))
+    for p in pool_list:
+        p_data = all_nodes_data.get(p.get("nodeid"), None)
+        if p_data is None:
+            # Node is offline
+            print ("{0:15s} {1:17s} {2}".format(
+                p.get("hostname") + ":DOWN",
+                action + ":N/A",
+                ""))
+        elif p_data.get("ok", False):
+            # Status OK in this node/peer
+            print ("{0:15s} {1:17s} {2}".format(
+                p.get("hostname") + ":UP",
+                action + ":OK",
+                p_data.get("output")))
+        else:
+            # Status NOT OK in this node/peer
+            print ("{0:15s} {1:17s} {2}".format(
+                p.get("hostname") + ":UP",
+                action + ":NOT OK",
+                p_data.get("error")))
+
+
+def restcli_action(action, if_enabled=False):
+    cmd = CMD + ["restcli.py", action]
+    if if_enabled:
+        cmd += ["-f"]
+
+    rc, out, err = execute(cmd, fail_msg="Failed to {0} rest".format(
+        action))
+    peer_restcli_output_handle(out, action)
+
+
+def handle_start(args):
+    restcli_action("start")
+
+
+def handle_stop(args):
+    restcli_action("stop")
+
+
+def handle_reload(args):
+    restcli_action("reload")
+
+
+def handle_status(args):
+    cmd = CMD + ["restcli.py", "status"]
+    rc, out, err = execute(cmd)
+    peer_restcli_output_handle(out, "status")
+
+
+def handle_restart(args):
+    restcli_action("restart")
+
+
+def handle_enable(args):
+    restcli_action("enable")
+
+
+def handle_disable(args):
+    restcli_action("disable")
+
+
+def handle_config_get(args):
+    data = json.load(open(DEFAULT_CONFIG_FILE))
+    if os.path.exists(CUSTOM_CONFIG_FILE):
+        data.update(json.load(open(CUSTOM_CONFIG_FILE)))
+
+    if args.name is not None and args.name not in CONFIG_KEYS:
+        output_error("Invalid Config item")
+
+    print ("{0:25s} {1}".format("NAME", "VALUE"))
+    print ("{0} {1}".format("-"*25, "-"*20))
+    if args.name is None:
+        for k, v in data.items():
+            print ("{0:25s} {1}".format(k, v))
+
+        return
+
+    print ("{0:25s} {1}".format(args.name, data[args.name]))
+
+
+def handle_config_set(args):
+    if args.name not in CONFIG_KEYS:
+        output_error("Invalid Config item")
+
+    data = json.load(open(DEFAULT_CONFIG_FILE))
+    if os.path.exists(CUSTOM_CONFIG_FILE):
+        data.update(json.load(open(CUSTOM_CONFIG_FILE)))
+
+    # Do Nothing if same as previous value
+    if data[args.name] == args.value:
+        return
+
+    # TODO: Validate Value
+    create_custom_config_file_if_not_exists()
+    new_data = json.load(open(CUSTOM_CONFIG_FILE))
+
+    v = args.value
+    if args.name == "port":
+        try:
+            v = int(args.value)
+        except ValueError:
+            # Do not update the conf file
+            return
+    elif args.name in BOOL_CONFIGS:
+        v = boolify(args.value)
+
+    new_data[args.name] = v
+    with open(CUSTOM_CONFIG_FILE, "w") as f:
+        f.write(json.dumps(new_data))
+
+    # If any value changed which requires restart of REST server
+    restart = False
+    if args.name in RESTART_CONFIGS:
+        restart = True
+
+    sync_to_peers(restart=restart)
+
+
+def handle_config_reset(args):
+    changed_keys = []
+    data = {}
+    if os.path.exists(CUSTOM_CONFIG_FILE):
+        data = json.load(open(CUSTOM_CONFIG_FILE))
+
+    if not data:
+        return
+
+    if not args.name:
+        for k, v in data.items():
+            changed_keys.append(k)
+
+        # Reset all keys
+        with open(CUSTOM_CONFIG_FILE, "w") as f:
+            f.write("{}")
+    else:
+        if data.get(args.name, None) is None:
+            return
+
+        changed_keys.append(args.name)
+        del data[args.name]
+        with open(CUSTOM_CONFIG_FILE, "w") as f:
+            f.write(json.dumps(data))
+
+    # If any value changed which requires restart of REST server
+    restart = False
+    for key in changed_keys:
+        if key in RESTART_CONFIGS:
+            restart = True
+            break
+
+    sync_to_peers(restart=restart)
+
+
+def sync_to_peers(restart=False):
+    if os.path.exists(APPS_FILE):
+        cmd = COPY_FILE_CMD + [APPS_FILE_TO_SYNC]
+        execute(cmd, fail_msg="Failed to Sync apps file")
+
+    if os.path.exists(CUSTOM_CONFIG_FILE):
+        cmd = COPY_FILE_CMD + [CUSTOM_CONFIG_FILE_TO_SYNC]
+        execute(cmd, fail_msg="Failed to Sync config file")
+
+    action = "reload"
+    if restart:
+        action = "restart"
+
+    restcli_action(action, "all", if_enabled=True)
+
+
+def handle_app_add(args):
+    """
+    Locally add the app and sync to all peer nodes
+    """
+    create_apps_file_if_not_exists()
+
+    with fasteners.InterProcessLock(APPS_FILE):
+        data = json.load(open(APPS_FILE))
+        if data.get(args.appid, None) is not None:
+            output_error("Application already exists")
+
+        data[args.appid] = args.appsecret
+
+        with open(APPS_FILE + ".tmp", "w") as f:
+            f.write(json.dumps(data))
+
+        os.rename(APPS_FILE + ".tmp", APPS_FILE)
+
+    sync_to_peers()
+
+
+def handle_app_reset(args):
+    create_apps_file_if_not_exists()
+
+    with fasteners.InterProcessLock(APPS_FILE):
+        data = json.load(open(APPS_FILE))
+        if data.get(args.appid, None) is None:
+            output_error("Application does not exists")
+
+        data[args.appid] = args.appsecret
+
+        with open(APPS_FILE + ".tmp", "w") as f:
+            f.write(json.dumps(data))
+
+        os.rename(APPS_FILE + ".tmp", APPS_FILE)
+
+    sync_to_peers()
+
+
+def handle_app_del(args):
+    create_apps_file_if_not_exists()
+
+    with fasteners.InterProcessLock(APPS_FILE):
+        data = json.load(open(APPS_FILE))
+        if data.get(args.appid, None) is None:
+            output_error("Application does not exists")
+
+        del data[args.appid]
+
+        with open(APPS_FILE + ".tmp", "w") as f:
+            f.write(json.dumps(data))
+
+        os.rename(APPS_FILE + ".tmp", APPS_FILE)
+
+    sync_to_peers()
+
+
+def handle_sync(args):
+    """
+    Sync Config file and apps file from current node to all peer nodes
+    """
+    sync_to_peers()
+
+
+def main():
+    parser = ArgumentParser(formatter_class=RawDescriptionHelpFormatter,
+                            description=__doc__)
+    subparsers = parser.add_subparsers(dest="mode")
+    subparsers.add_parser("enable", help="Enable REST Server")
+    subparsers.add_parser("disable", help="Disable REST Server")
+    subparsers.add_parser("start", help="Start REST Server")
+    subparsers.add_parser("stop", help="Stop REST Server")
+    subparsers.add_parser("restart", help="Restart REST Server")
+    subparsers.add_parser("reload", help="Restart REST Server")
+    subparsers.add_parser("status", help="Get Status of REST Server")
+    p = subparsers.add_parser("app-add", help="Add REST Application")
+    p.add_argument("appid", help="Application ID")
+    p.add_argument("appsecret", help="Application Secret")
+    p = subparsers.add_parser("app-reset",
+                              help="Reset REST Application")
+    p.add_argument("appid", help="Application ID")
+    p.add_argument("appsecret", help="Application Secret")
+
+    p = subparsers.add_parser("app-del",
+                              help="Delete REST Application")
+    p.add_argument("appid", help="Application ID")
+
+    p = subparsers.add_parser("config-set", help="Config Set")
+    p.add_argument("name", help="Configuration Item")
+    p.add_argument("value", help="Config Value")
+
+    p = subparsers.add_parser("config-reset", help="Config Reset")
+    p.add_argument("--name", "-n", help="Configuration Item")
+
+    p = subparsers.add_parser("config-get", help="Config Get")
+    p.add_argument("--name", "-n", help="Configuration Item")
+
+    subparsers.add_parser("sync",
+                          help="Sync apps list and config to all "
+                          "peers from current node")
+
+    args = parser.parse_args()
+    globals()["handle_" + args.mode.replace("-", "_")](args)
+
+
+if __name__ == "__main__":
+    main()

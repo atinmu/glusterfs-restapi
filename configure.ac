@@ -78,7 +78,11 @@ AC_ARG_WITH(initdir,
 AC_SUBST(initdir)
 
 
-AC_CONFIG_FILES([Makefile
+AC_CONFIG_FILES([doc/Makefile
+		 extra/Makefile
+		 extra/restconfig.json
+		 extra/glusterrestd.service
+		 Makefile
 		 src/Makefile
 		 src/gluster/Makefile
 		 src/gluster/rest/Makefile
@@ -88,8 +92,6 @@ AC_CONFIG_FILES([Makefile
 		 tools/Makefile
 		 tools/gluster-rest.py
 		 tools/peer_restcli.py
-		 extra/Makefile
-		 extra/restconfig.json
-		 extra/glusterrestd.service])
+		 ])
 
 AC_OUTPUT

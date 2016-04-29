@@ -1,1 +1,152 @@
 #!/usr/bin/env python
+"""
+This script will be called by glusterrest CLI command using
+`gluster system:: execute` infrastructure. For example,
+gluster system:: execute restcli.py enable rest
+
+No exit on failure, marks ok=false
+
+Success Output:
+    {nodeid: "398512cb-379e-43fe-85b6-c42e639ef8b3", ok: true, output: ""}
+
+Failure Output:
+    {nodeid: "398512cb-379e-43fe-85b6-c42e639ef8b3", ok: false, error: ""}
+
+"""
+from __future__ import print_function
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
+import sys
+import subprocess
+import xml.etree.cElementTree as etree
+import json
+
+
+def execute(cmd, fail_msg="", fail=True):
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.returncode != 0 and fail:
+        output_error(fail_msg + ": " + err.strip())
+
+    return p.returncode, out, err
+
+
+def output_error(message):
+    print (json.dumps({"nodeid": get_node_uuid(),
+                       "ok": False,
+                       "error": message}))
+    sys.exit(0)
+
+
+def output_success(message):
+    print (json.dumps({"nodeid": get_node_uuid(),
+                       "ok": True,
+                       "output": message}))
+    sys.exit(0)
+
+
+def get_node_uuid():
+    cmd = ["gluster", "system::", "uuid", "get", "--xml"]
+    rc, out, err = execute(cmd)
+
+    if rc != 0:
+        return None
+
+    tree = etree.fromstring(out)
+    uuid_el = tree.find("uuidGenerate/uuid")
+    return uuid_el.text
+
+
+def is_enabled(service):
+    rc, out, err = execute(["systemctl", "is-enabled", service],
+                           fail_msg="", fail=False)
+    return rc == 0
+
+
+def is_active(service):
+    rc, out, err = execute(["systemctl", "is-active", service],
+                           fail_msg="", fail=False)
+    return rc == 0
+
+
+def handle_action(args, action):
+    run_cmd_glusterrestd = True
+
+    if action in ["start", "stop", "restart"]:
+        if args.if_enabled:
+            if not is_enabled("glusterrestd"):
+                run_cmd_glusterrestd = False
+    elif action == "reload":
+        if args.if_enabled:
+            if not is_active("glusterrestd"):
+                run_cmd_glusterrestd = False
+
+    if run_cmd_glusterrestd:
+        execute(["systemctl", action, "glusterrestd"],
+                fail_msg="Failed to {0} glusterrestd".format(action))
+
+    output_success("")
+
+
+def handle_enable(args):
+    handle_action(args, "enable")
+
+
+def handle_disable(args):
+    handle_action(args, "disable")
+
+
+def handle_start(args):
+    handle_action(args, "start")
+
+
+def handle_restart(args):
+    handle_action(args, "restart")
+
+
+def handle_status(args):
+    output = "glusterrestd:"
+    if is_active("glusterrestd"):
+        output += "UP"
+    else:
+        output += "DOWN"
+
+    output_success(output)
+
+
+def handle_stop(args):
+    handle_action(args, "stop")
+
+
+def handle_reload(args):
+    handle_action(args, "reload")
+
+
+def main():
+    parser = ArgumentParser(formatter_class=RawDescriptionHelpFormatter,
+                            description=__doc__)
+
+    subparsers = parser.add_subparsers(dest="mode")
+    subparsers.add_parser("enable", help="Enable REST Server")
+    subparsers.add_parser("disable", help="Disable REST Server")
+
+    p = subparsers.add_parser("start", help="Start REST Server")
+    p.add_argument("-f", dest="if_enabled", action="store_true")
+
+    p = subparsers.add_parser("restart", help="Restart REST Server")
+    p.add_argument("-f", dest="if_enabled", action="store_true")
+
+    p = subparsers.add_parser("status", help="Get Status of "
+                              "glusterrestd")
+
+    p = subparsers.add_parser("stop", help="Stop REST Server")
+    p.add_argument("-f", dest="if_enabled", action="store_true")
+
+    p = subparsers.add_parser("reload", help="Reload REST Server")
+    p.add_argument("-f", dest="if_enabled", action="store_true")
+
+    args = parser.parse_args()
+    globals()["handle_" + args.mode.replace("-", "_")](args)
+
+
+if __name__ == "__main__":
+    main()

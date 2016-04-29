@@ -10,4 +10,5 @@ glusterrestd$(EXEEXT):
 
 CLEANFILES = glusterrestd vars.go
 
-EXTRA_DIST = glusterrestd.go vars.go.in
+EXTRA_DIST = glusterrestd.go vars.go.in handlers_peers.go handlers_volumes.go \
+	middleware_extra.go middleware_jwt.go routes.go

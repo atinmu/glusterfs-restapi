@@ -19,3 +19,6 @@ src/gluster/rest/glusterrestd
 src/gluster/rest/vars.go
 tools/gluster-rest.py
 tools/peer_restcli.py
+
+pkg
+src/github.com

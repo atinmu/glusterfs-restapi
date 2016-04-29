@@ -15,7 +15,7 @@ func PeerDitach(host string) error {
 }
 
 type Peer struct {
-	Id        string `xml:"uuid" json:"id"`
+	ID        string `xml:"uuid" json:"id"`
 	Hostname  string `xml:"hostname" json:"hostname"`
 	Connected int    `xml:"connected" json:"connected"`
 }

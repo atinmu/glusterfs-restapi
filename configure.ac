@@ -59,7 +59,7 @@ GLUSTERD_WORKDIR=${GLUSTERD_WORKDIR_TMP}
 prefix="${tmp_prefix}"
 AC_SUBST(GLUSTERD_WORKDIR)
 
-RESTAPI_GOPATH=$(dirname $(readlink -f $0))/restapi
+RESTAPI_GOPATH=$(dirname $(readlink -f $0))
 RESTAPI_BUILD_ID=$(head -c20 /dev/urandom | od -An -tx1 | tr -d ' \n')
 
 AC_SUBST(RESTAPI_GOPATH)
